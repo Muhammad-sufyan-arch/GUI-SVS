@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Voting System</title>
+  <!-- ✅ Linked to style.css via Flask's url_for -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+  <header>
+    <div class="ballot">🗳️</div>
+    <h1>Voting System</h1>
+    <p>Check your eligibility to vote</p>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('apply')">🪪 Apply for Vote</button>
+    <button class="tab-btn"        onclick="switchTab('stats')">📊 Statistics</button>
+    <button class="tab-btn"        onclick="switchTab('exit')">⏻ Exit</button>
+  </div>
+
+  <!-- ══ SCREEN 1: Apply ══════════════════════════════════ -->
+  <div class="screen active" id="screen-apply">
+    <div class="card">
+      <div class="section-lbl">Eligibility Check</div>
+
+      <!-- CNIC Question -->
+      <div class="form-group">
+        <label>Do you have a CNIC?</label>
+        <div class="radio-row">
+          <div class="radio-opt" id="opt-yes" onclick="selectCnic('yes')">✔ Yes</div>
+          <div class="radio-opt" id="opt-no"  onclick="selectCnic('no')">✘ No</div>
+        </div>
+      </div>
+
+      <!-- Age input (shown only when CNIC = yes) -->
+      <div class="form-group" id="age-group" style="display:none;">
+        <label for="age-input">Enter your age</label>
+        <input type="number" id="age-input" min="1" max="120" placeholder="e.g. 22" />
+      </div>
+
+      <!-- Buttons -->
+      <div class="btn-row">
+        <button class="btn" onclick="resetForm()">Reset</button>
+        <button class="btn primary" id="check-btn" onclick="checkEligibility()">
+          Check Eligibility
+        </button>
+      </div>
+    </div>
+
+    <!-- Result box -->
+    <div class="result-box" id="result-box">
+      <span class="result-icon" id="result-icon"></span>
+      <span id="result-msg"></span>
+    </div>
+  </div>
+
+  <!-- ══ SCREEN 2: Statistics ══════════════════════════════ -->
+  <div class="screen" id="screen-stats">
+    <div class="card">
+      <div class="section-lbl">Statistics</div>
+
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="stat-val blue" id="s-eligible">0</div>
+          <div class="stat-lbl">Eligible</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val red" id="s-not-eligible">0</div>
+          <div class="stat-lbl">Not Eligible</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val ink" id="s-total">0</div>
+          <div class="stat-lbl">Total</div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="bar-wrap">
+        <div class="bar-fill" id="bar-fill" style="width:0%"></div>
+      </div>
+      <div class="bar-labels">
+        <span id="bar-lbl-e">0% eligible</span>
+        <span id="bar-lbl-n">0% not eligible</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SCREEN 3: Exit ════════════════════════════════════ -->
+  <div class="screen" id="screen-exit">
+    <div class="card">
+      <div class="exit-center">
+        <div class="exit-icon">✅</div>
+        <h2>Thanks for your vote!</h2>
+        <p>You have exited the voting system.</p>
+        <div class="btn-row" style="justify-content:center; max-width:260px; margin:0 auto;">
+          <button class="btn primary" onclick="restartSystem()">🔄 Restart System</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ JavaScript — talks to Flask via fetch() API calls -->
+  <script>
+    let cnicChoice = null;
+
+    // ── Tab switching ────────────────────────────────────
+    function switchTab(name) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('screen-' + name).classList.add('active');
+      event.currentTarget.classList.add('active');
+      if (name === 'stats') loadStats();
+    }
+
+    // ── CNIC selection ───────────────────────────────────
+    function selectCnic(val) {
+      cnicChoice = val;
+      document.getElementById('opt-yes').className = 'radio-opt' + (val === 'yes' ? ' yes-active' : '');
+      document.getElementById('opt-no').className  = 'radio-opt' + (val === 'no'  ? ' no-active'  : '');
+      document.getElementById('age-group').style.display = val === 'yes' ? 'block' : 'none';
+      hideResult();
+    }
+
+    // ── Check eligibility → POST to Flask /apply ─────────
+    async function checkEligibility() {
+      if (!cnicChoice) { showResult('error', '⚠️', 'Please select whether you have a CNIC.'); return; }
+
+      const age = document.getElementById('age-input').value;
+
+      // Send data to Python backend
+      const res = await fetch('/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cnic: cnicChoice, age: age })
+      });
+
+      const data = await res.json();
+
+      // Show result based on Python's response
+      if (data.status === 'eligible')     showResult('eligible',     '✔️',  data.message);
+      else if (data.status === 'not_eligible') showResult('not-eligible', '✘',  data.message);
+      else if (data.status === 'no_cnic') showResult('no-cnic',      '📄', data.message);
+      else                                showResult('error',        '⚠️', data.message);
+    }
+
+    // ── Load stats → GET /stats from Flask ───────────────
+    async function loadStats() {
+      const res  = await fetch('/stats');
+      const data = await res.json();
+      document.getElementById('s-eligible').textContent     = data.eligible;
+      document.getElementById('s-not-eligible').textContent = data.not_eligible;
+      document.getElementById('s-total').textContent        = data.total;
+
+      const pct = data.total > 0 ? Math.round(data.eligible / data.total * 100) : 0;
+      document.getElementById('bar-fill').style.width  = pct + '%';
+      document.getElementById('bar-lbl-e').textContent = pct + '% eligible';
+      document.getElementById('bar-lbl-n').textContent = (100 - pct) + '% not eligible';
+    }
+
+    // ── Restart → POST /reset to Flask ───────────────────
+    async function restartSystem() {
+      await fetch('/reset', { method: 'POST' });
+      resetForm();
+      // switch to apply tab
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('screen-apply').classList.add('active');
+      document.querySelectorAll('.tab-btn')[0].classList.add('active');
+    }
+
+    // ── Helpers ──────────────────────────────────────────
+    function showResult(cls, icon, msg) {
+      const box = document.getElementById('result-box');
+      box.className = 'result-box show ' + cls;
+      document.getElementById('result-icon').textContent = icon;
+      document.getElementById('result-msg').textContent  = msg;
+    }
+    function hideResult() { document.getElementById('result-box').className = 'result-box'; }
+    function resetForm() {
+      cnicChoice = null;
+      document.getElementById('opt-yes').className = 'radio-opt';
+      document.getElementById('opt-no').className  = 'radio-opt';
+      document.getElementById('age-group').style.display = 'none';
+      document.getElementById('age-input').value = '';
+      hideResult();
+    }
+  </script>
+
+</body>
+</html>
